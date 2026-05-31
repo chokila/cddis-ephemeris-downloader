@@ -2,10 +2,10 @@
 """
 CDDIS Ephemeris File Downloader
 Flask backend for downloading GNSS ephemeris products from NASA CDDIS
-Fixed version using GPS week and day of week path structure
+Fixed version using GPS week path structure with proper file streaming
 """
 
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, Response
 from flask_cors import CORS
 import requests
 from requests.auth import HTTPBasicAuth
@@ -19,7 +19,7 @@ import logging
 from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -107,9 +107,8 @@ def check_file_availability(date_str, username, password):
         if gps_week is None or day_of_week is None:
             return {"success": False, "error": "Error calculating GPS week"}
         
-        # Build directory path using GPS week and day of week
+        # Build directory path using GPS week only (CORRECTED - no day_of_week subdirectory)
         dir_path = f"{CDDIS_BASE_URL}/{gps_week}/"
-        
         
         logger.info(f"========== FILE AVAILABILITY CHECK ==========")
         logger.info(f"Date: {date_obj.strftime('%Y-%m-%d')}")
@@ -330,7 +329,7 @@ def api_check_availability():
 
 @app.route('/api/download', methods=['POST'])
 def api_download():
-    """API endpoint to download a file"""
+    """API endpoint to download a file - returns file directly"""
     try:
         data = request.json
         
@@ -340,13 +339,14 @@ def api_download():
         filename = data.get('filename')
         
         if not all([username, password, file_url, filename]):
-            return jsonify({"success": False, "error": "Missing required parameters"})
+            return jsonify({"success": False, "error": "Missing required parameters"}), 400
         
         logger.info(f"\n*** FILE DOWNLOAD STARTED ***")
         logger.info(f"Filename: {filename}")
         logger.info(f"URL: {file_url}")
         
         try:
+            # Download file from CDDIS
             response = requests.get(
                 file_url,
                 auth=HTTPBasicAuth(username, password),
@@ -359,52 +359,45 @@ def api_download():
             
             if response.status_code == 401:
                 logger.error("Authentication failed")
-                return jsonify({"success": False, "error": "Authentication failed"})
+                return jsonify({"success": False, "error": "Authentication failed"}), 401
             
             if response.status_code != 200:
                 logger.error(f"Download failed with status {response.status_code}")
                 return jsonify({
                     "success": False,
                     "error": f"Download failed. Status: {response.status_code}"
-                })
+                }), 400
             
-            # Save the file
-            file_path = DOWNLOAD_DIR / filename
-            total_size = 0
+            # Get file content
+            file_content = response.content
+            file_size_mb = len(file_content) / (1024 * 1024)
             
-            logger.info(f"Saving to: {file_path}")
+            logger.info(f"✓ File retrieved successfully: {filename} ({file_size_mb:.2f} MB)")
             
-            with open(file_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        total_size += len(chunk)
-            
-            file_size_mb = total_size / (1024 * 1024)
-            logger.info(f"✓ File saved successfully: {file_path}")
-            logger.info(f"  Size: {file_size_mb:.2f} MB")
-            
-            return jsonify({
-                "success": True,
-                "message": f"File downloaded successfully ({file_size_mb:.2f} MB)",
-                "filename": filename,
-                "path": str(file_path),
-                "size": f"{file_size_mb:.2f} MB"
-            })
+            # Return file with proper headers
+            return Response(
+                file_content,
+                mimetype='application/gzip',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Type': 'application/gzip',
+                    'Content-Length': len(file_content)
+                }
+            )
         
         except requests.exceptions.Timeout:
             logger.error(f"Download timeout: {filename}")
-            return jsonify({"success": False, "error": "Download timeout. File too large or server too slow."})
+            return jsonify({"success": False, "error": "Download timeout. File too large or server too slow."}), 408
         except requests.exceptions.ConnectionError as ce:
             logger.error(f"Connection error: {str(ce)}")
-            return jsonify({"success": False, "error": f"Connection error: {str(ce)}"})
+            return jsonify({"success": False, "error": f"Connection error: {str(ce)}"}), 503
         except Exception as e:
             logger.error(f"Download error: {str(e)}", exc_info=True)
-            return jsonify({"success": False, "error": f"Error: {str(e)}"})
+            return jsonify({"success": False, "error": f"Error: {str(e)}"}), 500
             
     except Exception as e:
         logger.error(f"API Download Error: {str(e)}", exc_info=True)
-        return jsonify({"success": False, "error": f"Server error: {str(e)}"})
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 
 @app.route('/api/downloads-list', methods=['GET'])
