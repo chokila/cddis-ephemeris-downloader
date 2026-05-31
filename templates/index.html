@@ -97,7 +97,7 @@
 
         input[type="text"],
         input[type="password"],
-        input[type="date"] ,
+        input[type="date"],
         select {
             width: 100%;
             padding: 12px;
@@ -117,12 +117,17 @@
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
         }
-/* Datepicker calendar icon color - WHITE */
+
+        /* Datepicker calendar icon color - WHITE */
         input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: brightness(0) invert(1);
+            filter: invert(1) brightness(1.2) saturate(0);
             cursor: pointer;
         }
 
+        input[type="date"]::-webkit-outer-spin-button,
+        input[type="date"]::-webkit-inner-spin-button {
+            display: none;
+        }
 
         .radio-group {
             display: flex;
@@ -722,16 +727,42 @@
                     })
                 });
 
-                const data = await response.json();
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    showMessage(`Error downloading ${filename}: ${errorData.error}`, 'error');
+                    button.disabled = false;
+                    button.textContent = '⬇ Download';
+                    return;
+                }
 
-                if (data.success) {
-                    showMessage(`✓ ${filename} downloaded successfully`, 'success');
-                    button.textContent = '✓ Downloaded';
-                    button.style.background = 'var(--success)';
-                } else {
+                // Check if response is JSON (error) or binary (success)
+                const contentType = response.headers.get('content-type');
+                
+                if (contentType && contentType.includes('application/json')) {
+                    // Error response as JSON
+                    const data = await response.json();
                     showMessage(`Error downloading ${filename}: ${data.error}`, 'error');
                     button.disabled = false;
                     button.textContent = '⬇ Download';
+                } else {
+                    // Binary file response - trigger download
+                    const blob = await response.blob();
+                    
+                    // Create a temporary download link
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    
+                    // Trigger the download
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    document.body.removeChild(a);
+                    
+                    showMessage(`✓ ${filename} downloaded successfully`, 'success');
+                    button.textContent = '✓ Downloaded';
+                    button.style.background = 'var(--success)';
                 }
             } catch (error) {
                 showMessage(`Error: ${error.message}`, 'error');
