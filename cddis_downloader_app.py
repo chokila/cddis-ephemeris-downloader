@@ -2,7 +2,7 @@
 """
 CDDIS Ephemeris File Downloader
 Flask backend for downloading GNSS ephemeris products from NASA CDDIS
-Fixed version using GPS week and day of week path structure
+Fixed version using GPS week path structure (no day of week subdirectory)
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
@@ -16,6 +16,7 @@ import shutil
 from pathlib import Path
 import re
 import logging
+from io import BytesIO
 
 app = Flask(__name__)
 CORS(app)
@@ -106,9 +107,8 @@ def check_file_availability(date_str, username, password):
         if gps_week is None or day_of_week is None:
             return {"success": False, "error": "Error calculating GPS week"}
         
-        # Build directory path using GPS week and day of week
+        # Build directory path using GPS week only (CORRECTED - no day_of_week subdirectory)
         dir_path = f"{CDDIS_BASE_URL}/{gps_week}/"
-        
         
         logger.info(f"========== FILE AVAILABILITY CHECK ==========")
         logger.info(f"Date: {date_obj.strftime('%Y-%m-%d')}")
@@ -329,7 +329,7 @@ def api_check_availability():
 
 @app.route('/api/download', methods=['POST'])
 def api_download():
-    """API endpoint to download a file"""
+    """API endpoint to download a file - streams directly to browser"""
     try:
         data = request.json
         
@@ -346,6 +346,7 @@ def api_download():
         logger.info(f"URL: {file_url}")
         
         try:
+            # Download file from CDDIS
             response = requests.get(
                 file_url,
                 auth=HTTPBasicAuth(username, password),
@@ -367,29 +368,33 @@ def api_download():
                     "error": f"Download failed. Status: {response.status_code}"
                 })
             
-            # Save the file
-            file_path = DOWNLOAD_DIR / filename
-            total_size = 0
+            # Stream file directly to browser (don't save on server)
+            logger.info(f"Streaming file to browser: {filename}")
             
-            logger.info(f"Saving to: {file_path}")
+            # Get content length for logging
+            content_length = response.headers.get('Content-Length', 'Unknown')
+            if content_length != 'Unknown':
+                file_size_mb = int(content_length) / (1024 * 1024)
+                logger.info(f"File size: {file_size_mb:.2f} MB")
             
-            with open(file_path, 'wb') as f:
+            # Stream the file content directly to the user's browser
+            def generate():
+                """Generator to stream file chunks to browser"""
+                total_bytes = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
-                        f.write(chunk)
-                        total_size += len(chunk)
+                        total_bytes += len(chunk)
+                        yield chunk
+                
+                logger.info(f"✓ File streamed successfully: {filename} ({total_bytes / (1024*1024):.2f} MB)")
             
-            file_size_mb = total_size / (1024 * 1024)
-            logger.info(f"✓ File saved successfully: {file_path}")
-            logger.info(f"  Size: {file_size_mb:.2f} MB")
-            
-            return jsonify({
-                "success": True,
-                "message": f"File downloaded successfully ({file_size_mb:.2f} MB)",
-                "filename": filename,
-                "path": str(file_path),
-                "size": f"{file_size_mb:.2f} MB"
-            })
+            # Return file as downloadable attachment
+            return send_file(
+                BytesIO(response.content),
+                mimetype='application/gzip',
+                as_attachment=True,
+                download_name=filename
+            )
         
         except requests.exceptions.Timeout:
             logger.error(f"Download timeout: {filename}")
