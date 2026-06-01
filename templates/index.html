@@ -422,9 +422,27 @@
 <body>
     <div class="container">
         <!-- Header -->
-        <div class="header">
+        <div class="header" style="position: relative;">
+            <!-- NLCS Logo in Top Right -->
+            <div style="position: absolute; top: 20px; right: 20px;">
+                <img src="https://web.nlcs.gov.bt/wp-content/uploads/2025/06/web_logo.png" 
+                     alt="NLCS Logo" 
+                     style="height: 60px; width: auto; opacity: 0.9; transition: opacity 0.3s ease; cursor: pointer;"
+                     onmouseover="this.style.opacity='1'"
+                     onmouseout="this.style.opacity='0.9'">
+            </div>
+            
+            <!-- Main Title -->
             <h1>📡 CDDIS Ephemeris Downloader</h1>
+            
+            <!-- Subtitle -->
             <p>Download GNSS Products from NASA CDDIS Archive</p>
+            
+            <!-- Custom Text Below Title -->
+            <div style="margin-top: 15px; font-size: 0.9rem; color: var(--text-secondary);">
+                <p style="margin: 5px 0;">🏛️ Customized for NLCS use only</p>
+                <p style="margin: 5px 0;">👤 Developed by Chokila, Superintended Survey Engineer</p>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -743,7 +761,6 @@
             html += `</div>`;
             container.innerHTML = html;
             showMessage(`Found ${totalFileCount} files across ${filesCount} dates`, 'success');
-        }
         }
 
         async function downloadFile(url, filename, username, password) {
