@@ -467,7 +467,7 @@
                 </div>
 
                 <!-- Date Range Fields -->
-                <div id="date-range-fields" class="date-range-fields">
+                <div id="date-range-fields" class="date-range-fields" style="display: none;">
                     <div class="form-group">
                         <label for="start-date">Start Date</label>
                         <input type="date" id="start-date">
@@ -504,17 +504,19 @@
     <script>
         const API_BASE = '/api';
 
-        // Mode selection
+        // Mode selection - Toggle between single date and date range
         document.querySelectorAll('input[name="mode"]').forEach(radio => {
             radio.addEventListener('change', function() {
                 const dateRangeFields = document.getElementById('date-range-fields');
                 const singleDateFields = document.getElementById('single-date-fields');
                 
                 if (this.value === 'range') {
-                    dateRangeFields.classList.add('active');
+                    // Show date range fields
+                    dateRangeFields.style.display = 'block';
                     singleDateFields.style.display = 'none';
                 } else {
-                    dateRangeFields.classList.remove('active');
+                    // Show single date fields
+                    dateRangeFields.style.display = 'none';
                     singleDateFields.style.display = 'block';
                 }
             });
