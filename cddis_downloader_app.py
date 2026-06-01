@@ -285,46 +285,59 @@ def index():
 
 @app.route('/api/check-availability', methods=['POST'])
 def api_check_availability():
-    """API endpoint to check file availability"""
-    data = request.json
-    
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    
-    if not username or not password:
-        return jsonify({"success": False, "error": "Username and password required"})
-    
-    logger.info(f"\n*** NEW AVAILABILITY CHECK REQUEST ***")
-    logger.info(f"User: {username}")
-    
+    """API endpoint to check file availability - ALWAYS returns JSON"""
     try:
-        if data.get('mode') == 'single':
+        data = request.json
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        if not username or not password:
+            return jsonify({"success": False, "error": "Username and password required"}), 400
+        
+        logger.info(f"\n*** NEW AVAILABILITY CHECK REQUEST ***")
+        logger.info(f"User: {username}")
+        
+        # IMPORTANT: Check mode BEFORE processing
+        mode = data.get('mode', 'single')
+        logger.info(f"Mode: {mode}")
+        
+        if mode == 'single':
             date = data.get('date')
             if not date:
-                return jsonify({"success": False, "error": "Date required"})
-            logger.info(f"Mode: Single date - {date}")
+                return jsonify({"success": False, "error": "Date required"}), 400
+            logger.info(f"Checking single date: {date}")
             result = check_file_availability(date, username, password)
-        else:
+        
+        elif mode == 'range':
             start_date = data.get('start_date')
             end_date = data.get('end_date')
             if not start_date or not end_date:
-                return jsonify({"success": False, "error": "Start and end dates required"})
-            logger.info(f"Mode: Date range - {start_date} to {end_date}")
+                return jsonify({"success": False, "error": "Start and end dates required"}), 400
+            logger.info(f"Checking date range: {start_date} to {end_date}")
             result = check_date_range_availability(start_date, end_date, username, password)
         
+        else:
+            return jsonify({"success": False, "error": "Invalid mode"}), 400
+        
+        # Ensure result is always a dict with success key
+        if not isinstance(result, dict):
+            result = {"success": False, "error": "Invalid result format"}
+        
         if result.get('success'):
-            if data.get('mode') == 'single':
+            if mode == 'single':
                 logger.info(f"✓ Search completed: Found {result.get('file_count', 0)} files")
             else:
                 logger.info(f"✓ Search completed: Found files for {result.get('total_dates', 0)} dates")
         else:
             logger.warning(f"✗ Search failed: {result.get('error', 'Unknown error')}")
         
-        return jsonify(result)
+        # ALWAYS return JSON for availability checks
+        return jsonify(result), 200
     
     except Exception as e:
         logger.error(f"API Error: {str(e)}", exc_info=True)
-        return jsonify({"success": False, "error": f"Server error: {str(e)}"})
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 
 @app.route('/api/download', methods=['POST'])
