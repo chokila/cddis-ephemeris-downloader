@@ -423,23 +423,9 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-    <!-- NLCS Logo in Top Right -->
-    <div style="position: absolute; top: 20px; right: 20px;">
-        <img src="https://web.nlcs.gov.bt/wp-content/uploads/2025/06/web_logo.png" 
-             alt="NLCS Logo" 
-             style="height: 60px; width: auto; opacity: 0.9; transition: opacity 0.3s ease;">
-    </div>
-    
-    <!-- Main Title -->
-    <h1>📡 CDDIS Ephemeris Downloader</h1>
-    
-    <!-- Custom Text Below Title -->
-    <p>Download GNSS Products from NASA CDDIS Archive</p>
-    <div style="margin-top: 15px; font-size: 0.9rem; color: var(--text-secondary);">
-        <p style="margin: 5px 0;">🏛️ Customized for NLCS use only</p>
-        <p style="margin: 5px 0;">👤 Developed by Chokila, Superintended Survey Engineer</p>
-    </div>
-</div>
+            <h1>📡 CDDIS Ephemeris Downloader</h1>
+            <p>Download GNSS Products from NASA CDDIS Archive</p>
+        </div>
 
         <!-- Main Content -->
         <div class="main-grid">
@@ -584,6 +570,17 @@
                     body: JSON.stringify(requestData)
                 });
 
+                // Check if response is OK
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+
+                // Get content type to verify it's JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error(`Invalid response type: ${contentType}. Expected JSON.`);
+                }
+
                 const data = await response.json();
                 showLoading(false);
 
@@ -591,13 +588,20 @@
                     if (mode === 'single') {
                         displaySingleDateResults(data);
                     } else {
-                        displayDateRangeResults(data);
+                        // For date range
+                        if (data.dates_with_files && Object.keys(data.dates_with_files).length === 0) {
+                            showMessage(`No files found in the date range ${data.start_date} to ${data.end_date}`, 'info');
+                            clearResults();
+                        } else {
+                            displayDateRangeResults(data);
+                        }
                     }
                 } else {
                     showMessage(data.error || 'Unknown error occurred', 'error');
                 }
             } catch (error) {
                 showLoading(false);
+                logger.warn(`Error during availability check: ${error.message}`);
                 showMessage(`Error: ${error.message}`, 'error');
             }
         }
@@ -664,7 +668,15 @@
         function displayDateRangeResults(data) {
             const container = document.getElementById('results-container');
             
-            if (Object.keys(data.dates_with_files).length === 0) {
+            // Check if data has the expected structure
+            if (!data.dates_with_files) {
+                showMessage('Error: Invalid response format from server', 'error');
+                return;
+            }
+
+            const filesCount = Object.keys(data.dates_with_files).length;
+            
+            if (filesCount === 0) {
                 container.innerHTML = `
                     <div class="card">
                         <div class="no-results">
@@ -680,7 +692,7 @@
                 <div class="card">
                     <div class="stats">
                         <div class="stat-item">
-                            <div class="stat-value">${data.total_dates}</div>
+                            <div class="stat-value">${filesCount}</div>
                             <div class="stat-label">Dates with Files</div>
                         </div>
                         <div class="stat-item">
@@ -695,33 +707,41 @@
                     <h3 style="margin-bottom: 15px;">Available Files</h3>
             `;
 
+            let totalFileCount = 0;
+            
             Object.entries(data.dates_with_files).forEach(([date, files]) => {
-                html += `<div class="date-group">
-                    <div class="date-group-title">📅 ${date}</div>
-                `;
-
-                files.forEach(file => {
-                    html += `
-                        <div class="file-item" style="margin-bottom: 10px;">
-                            <div class="file-info">
-                                <div class="file-name">${file.filename}</div>
-                                <div class="file-description">${file.description}</div>
-                            </div>
-                            <div class="file-actions">
-                                <button class="button btn-download" onclick="downloadFile('${file.url}', '${file.filename}', '${document.getElementById('username').value}', '${document.getElementById('password').value}')">
-                                    ⬇ Download
-                                </button>
-                            </div>
-                        </div>
+                if (Array.isArray(files)) {
+                    totalFileCount += files.length;
+                    html += `<div class="date-group">
+                        <div class="date-group-title">📅 ${date} (${files.length} files)</div>
                     `;
-                });
 
-                html += `</div>`;
+                    files.forEach(file => {
+                        if (file && file.filename) {
+                            html += `
+                                <div class="file-item" style="margin-bottom: 10px;">
+                                    <div class="file-info">
+                                        <div class="file-name">${file.filename}</div>
+                                        <div class="file-description">${file.description || 'Unknown'} (${file.size || 'Unknown'})</div>
+                                    </div>
+                                    <div class="file-actions">
+                                        <button class="button btn-download" onclick="downloadFile('${file.url}', '${file.filename}', '${document.getElementById('username').value}', '${document.getElementById('password').value}')">
+                                            ⬇ Download
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+
+                    html += `</div>`;
+                }
             });
 
             html += `</div>`;
             container.innerHTML = html;
-            showMessage(`Found ${data.total_dates} dates with available files`, 'success');
+            showMessage(`Found ${totalFileCount} files across ${filesCount} dates`, 'success');
+        }
         }
 
         async function downloadFile(url, filename, username, password) {
